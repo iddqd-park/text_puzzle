@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1STWQ9ME29"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-1STWQ9ME29');
+    </script>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>텍스트 퍼즐 v3.0</title>
+  <!-- Bootstrap CSS -->
+  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
+  <style>
+    /* ===== Base / DOS vibe ===== */
+    :root{
+      --crt-scanline: rgba(255,255,255,0.05);
+      --crt-glow: 0 0 6px rgba(255,255,255,0.25);
+      --slide-ms: 260ms; /* 스르륵 속도 */
+      --slide-ease: cubic-bezier(.22,.61,.36,1); /* 실키한 이징 */
+    }
+    html, body { height: 100%; }
+    body {
+      background-color: #0035a0; /* 파란 바탕 유지 */
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      position: relative;
+      overflow-x: hidden;
+    }
+    /* CRT 스캔라인 & 약한 플리커 */
+    body::before{
+      content:"";
+      position: fixed; inset:0;
+      pointer-events:none;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          transparent 0px,
+          transparent 2px,
+          var(--crt-scanline) 3px,
+          transparent 4px
+        );
+      mix-blend-mode: screen;
+      animation: crtFlicker 3.5s infinite steps(60);
+    }
+    @keyframes crtFlicker {
+      0%, 100% { opacity: 0.18; }
+      50% { opacity: 0.24; }
+    }
+
+    .instuction {
+      background-color: white;
+      color:black;
+      box-shadow: 0 0 0 2px #111 inset;
+    }
+
+    /* 퍼즐 타일 영역 */
+    #puzzle {
+      background-color: #fff;
+      display: flex; flex-wrap: wrap;
+      max-width: 400px; margin: auto;
+      border: 4px solid #111;
+      box-shadow: var(--crt-glow);
+      position: relative;
+    }
+    .tile { width: 20%; padding-top: 20%; position: relative; }
+    .tile button {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-color: #222;
+      border: 1px solid #555;
+      color: #fff; font-size: 1.2rem;
+      font-family: 'Courier New', monospace;
+      /* transform 트랜지션은 제거하고 filter/box-shadow만 둠 (충돌 방지) */
+      transition: filter 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 0 0 1px #000 inset;
+    }
+    .tile button:hover { filter: brightness(1.1); }
+    .tile button:active { transform: scale(0.98); }
+
+    /* FLIP 애니메이션 = 스르륵 슬라이드 */
+    .flip-anim {
+      transition: transform var(--slide-ms) var(--slide-ease) !important;
+      will-change: transform;
+    }
+
+    /* 잘못된 클릭/충돌 시 흔들림 */
+    @keyframes shakeX {
+      0% { transform: translateX(0); }
+      20% { transform: translateX(-4px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(3px); }
+      100% { transform: translateX(0); }
+    }
+    .shake { animation: shakeX 220ms ease; }
+
+    /* 화면 전체 흔들림 */
+    @keyframes screenShake {
+      0% { transform: translate(0,0) }
+      25% { transform: translate(2px,-2px) }
+      50% { transform: translate(-2px,2px) }
+      75% { transform: translate(1px,-1px) }
+      100% { transform: translate(0,0) }
+    }
+    .shake-screen { animation: screenShake 200ms ease; }
+
+    /* 플래시 효과 */
+    .flash-layer{
+      position: fixed; inset:0; pointer-events:none;
+      background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.75), rgba(255,255,255,0) 60%);
+      opacity: 0; transition: opacity 150ms ease;
+      z-index: 10;
+    }
+    .flash-layer.show{ opacity: 1; }
+
+    /* 카운터 펄스 */
+    @keyframes pulse {
+      0% { transform: scale(1); text-shadow: 0 0 0px #fff; }
+      50% { transform: scale(1.1); text-shadow: 0 0 8px #fff; }
+      100% { transform: scale(1); text-shadow: 0 0 0px #fff; }
+    }
+    .pulse { animation: pulse 250ms ease; display: inline-block; }
+
+    /* 헤더에 초록 커서 느낌 */
+    h1{
+      text-shadow: var(--crt-glow);
+      letter-spacing: 1px;
+      position: relative;
+    }
+    h1::after{
+      content: "_";
+      margin-left: 6px;
+      animation: caret 1s steps(2) infinite;
+      color: #aef3ae;
+      text-shadow: 0 0 6px #aef3ae;
+    }
+    @keyframes caret {
+      0%, 49% { opacity: 0; }
+      50%, 100% { opacity: 1; }
+    }
+
+    /* Bootstrap 토스트 약간 레트로 느낌 */
+    .toast.retro{
+      background: #111; color: #9ff59f;
+      border: 1px solid #2a2a2a;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="flash-layer" id="flash"></div>
+
+  <div class='container text-center py-3' id="root">
+    <h1>*** TEXT Puzzle v3.0 ***</h1>
+    <p>Copyleft (C)2025 <b>최상무</b></p>
+    <p>Javascript 포팅 & Minor updates by <b>박실장</b></p>
+
+    <div class='row justify-content-center my-3'>
+      <div class='col-6'>
+        <div class='instuction p-2 pt-4'>
+          <h5>How to Play</h5>
+          <p>이동: 화살표 키(반전) 또는 블록 클릭</p>
+          <div class="d-flex align-items-center gap-3 justify-content-center">
+            <button id='shuffle' class='btn btn-danger'>리셋</button>
+            <div class='form-check form-switch'>
+              <input class='form-check-input' type='checkbox' id='sfx' checked>
+              <label class='form-check-label' for='sfx'>SFX</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id='puzzle'></div>
+
+    <div class='row justify-content-center my-3'>
+      <div class='col-auto'>Movement Counter: <span id='moves'>0</span></div>
+      <div class='col-auto'>Elapsed Time: <span id='time'>00:00</span></div>
+    </div>
+  </div>
+
+  <!-- Toast: 클리어 알림 -->
+  <div class="position-fixed top-0 start-50 translate-middle-x p-3" style="z-index: 20;">
+    <div id="winToast" class="toast retro" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-body">
+        퍼즐 클리어! 축하드립니다. 🎉
+      </div>
+    </div>
+  </div>
+
+  <!-- jQuery and Bootstrap JS -->
+  <script src='https://code.jquery.com/jquery-3.6.0.min.js'></script>
+  <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
+  <script>
+    const SIZE = 5;
+    let puzzle = [];
+    let blankX = 0, blankY = 0;
+    let moves = 0;
+    let startTime = Date.now();
+    let timerInterval;
+    let audioCtx = null;
+
+    /* ===== Audio (PC 스피커 풍) ===== */
+    function initAudio(){
+      if(!audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+        catch(e){ audioCtx = null; }
+      }
+    }
+    function playBeep(freq = 440, duration = 0.05, type = 'square', vol = 0.2){
+      if (!$('#sfx').is(':checked')) return;
+      initAudio();
+      if(!audioCtx) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g).connect(audioCtx.destination);
+      o.start();
+      setTimeout(() => {
+        g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.03);
+        o.stop(audioCtx.currentTime + 0.04);
+      }, duration * 1000);
+    }
+
+    /* ===== Visual FX ===== */
+    function flash() {
+      const el = document.getElementById('flash');
+      el.classList.add('show');
+      setTimeout(()=> el.classList.remove('show'), 140);
+    }
+    function bumpInvalid($el){
+      $el.addClass('shake');
+      playBeep(140, 0.07, 'square', 0.2);
+      setTimeout(()=> $el.removeClass('shake'), 240);
+    }
+    function pulseMoves(){
+      const el = document.getElementById('moves');
+      el.classList.remove('pulse');
+      void el.offsetWidth; /* reflow to restart animation */
+      el.classList.add('pulse');
+    }
+
+    /* ===== FLIP (Slide) =====
+       이전 위치→새 위치를 transform 으로 '스르륵'
+       rAF 두 번으로 프레임 분리하여 안정적으로 트랜지션 유도
+    */
+    function capturePositions(){
+      const map = {};
+      $('#puzzle .tile button').each((i, el) => {
+        const num = Number(el.dataset.num);
+        if(!num) return;
+        map[num] = el.getBoundingClientRect();
+      });
+      return map;
+    }
+    function animateFLIP(prevPos){
+      const els = Array.from(document.querySelectorAll('#puzzle .tile button'));
+      els.forEach(el => {
+        const num = Number(el.dataset.num);
+        if(!num || !prevPos[num]) return;
+        const last = el.getBoundingClientRect();
+        const dx = prevPos[num].left - last.left;
+        const dy = prevPos[num].top  - last.top;
+        if (dx || dy) {
+          // 1) 초기 위치로 순간 이동 (트랜지션 없음)
+          el.style.transform = `translate(${dx}px, ${dy}px)`;
+          el.classList.add('flip-anim'); // transform 전용 트랜지션 부여
+          // 2) 다음 프레임에 원위치로 이동 → 트랜지션 작동
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              el.style.transform = 'translate(0,0)';
+            });
+          });
+          // 3) 뒷정리
+          const cleanup = () => {
+            el.classList.remove('flip-anim');
+            el.style.transform = '';
+            el.removeEventListener('transitionend', cleanup);
+          };
+          el.addEventListener('transitionend', cleanup);
+        }
+      });
+    }
+
+    /* ===== Puzzle Core ===== */
+    function initPuzzle() {
+      let nums = [...Array(SIZE * SIZE).keys()];
+      do {
+        nums.sort(() => Math.random() - 0.5);
+      } while (!isSolvable(nums));
+
+      puzzle = [];
+      for (let i = 0; i < SIZE; i++) {
+        puzzle.push(nums.slice(i * SIZE, i * SIZE + SIZE));
+      }
+      const idx = nums.indexOf(0);
+      blankX = idx % SIZE;
+      blankY = Math.floor(idx / SIZE);
+
+      moves = 0;
+      $('#moves').text(moves);
+      startTime = Date.now();
+      $('#time').text('00:00');
+      clearInterval(timerInterval);
+      timerInterval = setInterval(updateTime, 1000);
+      drawPuzzle();
+
+      // 효과
+      document.getElementById('root').classList.add('shake-screen');
+      setTimeout(()=> document.getElementById('root').classList.remove('shake-screen'), 220);
+      flash();
+      playBeep(220, 0.08, 'square', 0.25);
+      playBeep(110, 0.08, 'square', 0.25);
+    }
+
+    function isSolvable(arr) {
+      // 5x5(홀수 너비) 퍼즐은 inversion 짝수면 풀림
+      let inv = 0;
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          if (arr[i] && arr[j] && arr[i] > arr[j]) inv++;
+        }
+      }
+      return inv % 2 === 0;
+    }
+
+    function isSolved(){
+      const flat = puzzle.flat();
+      for (let i = 0; i < flat.length - 1; i++){
+        if (flat[i] !== i + 1) return false;
+      }
+      return flat[flat.length-1] === 0;
+    }
+
+    function drawPuzzle() {
+      const $pz = $('#puzzle').empty();
+      puzzle.forEach((row, y) => {
+        row.forEach((num, x) => {
+          const tile = $('<div>').addClass('tile').attr('data-x', x).attr('data-y', y);
+          if (num) {
+            const btn = $('<button>')
+              .text(num)
+              .attr('data-num', num)
+              .on('click', function(){ tryMove(x, y, this); });
+            tile.append(btn);
+          }
+          $pz.append(tile);
+        });
+      });
+    }
+
+    function tryMove(x, y, elRef=null) {
+      const prevPos = capturePositions();
+      if (Math.abs(blankX - x) + Math.abs(blankY - y) === 1) {
+        puzzle[blankY][blankX] = puzzle[y][x];
+        puzzle[y][x] = 0;
+        blankX = x;
+        blankY = y;
+        moves++;
+        $('#moves').text(moves);
+        pulseMoves();
+        drawPuzzle();
+        animateFLIP(prevPos);          // ← 스르륵 이동
+        playBeep(660, 0.05, 'square', 0.2);
+
+        if(isSolved()){
+          onSolved();
+        }
+      } else {
+        if (elRef){
+          bumpInvalid($(elRef));
+        } else {
+          document.getElementById('root').classList.add('shake-screen');
+          setTimeout(()=> document.getElementById('root').classList.remove('shake-screen'), 220);
+          playBeep(140, 0.07, 'square', 0.2);
+        }
+      }
+    }
+
+    function onSolved(){
+      clearInterval(timerInterval);
+      flash();
+      document.getElementById('root').classList.add('shake-screen');
+      setTimeout(()=> document.getElementById('root').classList.remove('shake-screen'), 220);
+      // 축하 비프
+      playBeep(523.25, 0.08, 'square', 0.2);
+      setTimeout(()=> playBeep(659.25, 0.08, 'square', 0.2), 90);
+      setTimeout(()=> playBeep(783.99, 0.12, 'square', 0.25), 180);
+
+      const toastEl = document.getElementById('winToast');
+      const t = new bootstrap.Toast(toastEl, { delay: 2000 });
+      t.show();
+    }
+
+    function updateTime() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      $('#time').text(`${m}:${s}`);
+    }
+
+    $(document).ready(() => {
+      initPuzzle();
+
+      $('#shuffle').on('click', () => {
+        initPuzzle();
+      });
+
+      // 방향 반전 (요청사항 유지)
+      $(document).on('keydown', (e) => {
+        let dx = 0, dy = 0, attempt = false;
+        if (e.key === 'ArrowUp')        { dy =  1; attempt = true; }
+        else if (e.key === 'ArrowDown') { dy = -1; attempt = true; }
+        else if (e.key === 'ArrowLeft') { dx =  1; attempt = true; }
+        else if (e.key === 'ArrowRight'){ dx = -1; attempt = true; }
+
+        if (attempt) {
+          e.preventDefault(); // 스크롤 방지
+          const x = blankX + dx, y = blankY + dy;
+          if (x >= 0 && x < SIZE && y >= 0 && y < SIZE) {
+            const prevPos = capturePositions();
+            puzzle[blankY][blankX] = puzzle[y][x];
+            puzzle[y][x] = 0;
+            blankX = x;
+            blankY = y;
+            moves++;
+            $('#moves').text(moves);
+            pulseMoves();
+            drawPuzzle();
+            animateFLIP(prevPos);       // ← 스르륵 이동
+            playBeep(520, 0.05, 'square', 0.18);
+
+            if(isSolved()){
+              onSolved();
+            }
+          } else {
+            // 경계 밖
+            document.getElementById('root').classList.add('shake-screen');
+            setTimeout(()=> document.getElementById('root').classList.remove('shake-screen'), 200);
+            flash();
+            playBeep(120, 0.07, 'square', 0.22);
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
